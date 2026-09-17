@@ -23,12 +23,13 @@ BASE_URL = "http://fota-cloud-dn.ospserver.net/firmware"
 def md5_hex(s: str) -> str:
     return hashlib.md5(s.encode("utf-8")).hexdigest()
 
-
-def fetch_text(url: str, timeout: int = 20) -> str:
-    resp = requests.get(url, timeout=timeout)
+def fetch_text(url: str, model: str, timeout: int = 20) -> str:
+    headers = {
+        "User-Agent": f"samsung {model} SyncML DM Client",
+    }
+    resp = requests.get(url, headers=headers, timeout=timeout)
     resp.raise_for_status()
     return resp.text
-
 
 def extract_pda_from_version_xml(text: str) -> Optional[str]:
     m = re.search(r"<pda>([A-Z0-9]{12,})</pda>", text)
@@ -141,7 +142,7 @@ def process_one(args: Tuple[str, str, bool]) -> Tuple[str, str, int, bool, bool]
     if verbose:
         print(f"[{csc}/{model_id}] Downloading version.xml: {ver_xml_url}", file=sys.stderr)
     try:
-        ver_xml_text = fetch_text(ver_xml_url, timeout=20)
+        ver_xml_text = fetch_text(ver_xml_url, f"SM-{model_id}", timeout=20)
     except Exception as e:
         print(f"[{csc}/{model_id}] Failed to fetch version.xml: {e}", file=sys.stderr)
         return csc, model_id, 0, True, False  # network / server error
@@ -172,20 +173,35 @@ def process_one(args: Tuple[str, str, bool]) -> Tuple[str, str, int, bool, bool]
     # 2) version.test.xml -> hashes
     ver_test_url = f"{base_url}/version.test.xml"
     if verbose:
-        print(f"[{csc}/{model_id}] Downloading version.test.xml: {ver_test_url}", file=sys.stderr)
+        print(
+            f"[{csc}/{model_id}] Downloading version.test.xml: {ver_test_url}",
+            file=sys.stderr,
+        )
+
     try:
-        ver_test_text = fetch_text(ver_test_url, timeout=30)
+        ver_test_text = fetch_text(
+            ver_test_url,
+            f"SM-{model_id}",
+            timeout=30,
+        )
     except Exception as e:
-        print(f"[{csc}/{model_id}] Failed to fetch version.test.xml: {e}", file=sys.stderr)
+        print(
+            f"[{csc}/{model_id}] Failed to fetch version.test.xml: {e}",
+            file=sys.stderr,
+        )
         return csc, model_id, 0, True, False
 
     hashes = [
-        m.group(0).lower() for m in re.finditer(r"[0-9a-fA-F]{32}", ver_test_text)
+        m.group(0).lower()
+        for m in re.finditer(r"[0-9a-fA-F]{32}", ver_test_text)
     ]
+
     if not hashes:
         if verbose:
-            print(f"[{csc}/{model_id}] No hashes in version.test.xml", file=sys.stderr)
-        # No data, but not a network error. No file/commit.
+            print(
+                f"[{csc}/{model_id}] No hashes in version.test.xml",
+                file=sys.stderr,
+            )
         return csc, model_id, 0, False, False
 
     hash_set = set(hashes)
